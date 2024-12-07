@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+
+import os
+import subprocess
+import sys
+from datetime import datetime
+
+def log(message):
+    """
+    Print a log message with a timestamp.
+    """
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}")
+
+def run_command(command, cwd=None, capture_output=False, shell=False):
+    """
+    Run a shell command and return its output or print errors.
+    """
+    log(f"Running command: {' '.join(command) if isinstance(command, list) else command}")
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            check=True,
+            text=True,
+            shell=shell,
+            capture_output=capture_output,
+        )
+        if capture_output:
+            log(f"Command output: {result.stdout.strip()}")
+        return result.stdout.strip() if capture_output else None
+    except subprocess.CalledProcessError as e:
+        log(f"Error: Command failed: {command}\n{e}")
+        sys.exit(1)
+
+def is_git_repo():
+    """
+    Check if the current directory is a Git repository.
+    """
+    return os.path.isdir(".git")
+
+def stage_changes():
+    """
+    Stage all changes in the current Git repository.
+    """
+    log("Staging all changes...")
+    run_command("git add .", shell=True)
+
+def get_git_changes():
+    """
+    Retrieve changes since the last commit.
+    """
+    log("Retrieving git changes...")
+    return run_command("git diff --cached", capture_output=True, shell=True)
+
+def ask_ollama(context):
+    """
+    Use Ollama to generate a commit message based on the context.
+    """
+    log("Preparing prompt for Ollama...")
+    prompt = f"Closely analyze the following git changes. Write a detailed commit message that encompasses the changes. Be as succinct as possible.\n\n{context}"
+    escaped_prompt = f'"""{" ".join(prompt.splitlines())}"""'
+
+    log("Sending request to Ollama LLM...")
+    command = ["ollama", "run", "llama3.2-vision:latest", escaped_prompt]
+    response = run_command(command, capture_output=True)
+    log("Received response from Ollama.")
+    return response
+
+def ask_third_party(context, provider):
+    """
+    Use a third-party LLM (e.g., OpenAI or Anthropic) to generate a commit message.
+    """
+    log(f"Using third-party provider: {provider}...")
+    if provider == "openai":
+        import openai
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        log("Sending request to OpenAI...")
+        response = openai.Completion.create(
+            model="text-davinci-003",
+            prompt=f"Closely analyze the following git changes. Write a detailed commit message that encompasses the changes. Be as succinct as possible.\n\n{context}",
+            max_tokens=100,
+        )
+        log("Received response from OpenAI.")
+        return response["choices"][0]["text"].strip()
+
+    elif provider == "anthropic":
+        import anthropic
+        client = anthropic.Client(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        log("Sending request to Anthropic...")
+        response = client.completions.create(
+            model="claude-2",
+            prompt=f"Closely analyze the following git changes. Write a detailed commit message that encompasses the changes. Be as succinct as possible.\n\n{context}",
+            max_tokens_to_sample=100,
+        )
+        log("Received response from Anthropic.")
+        return response.completion.strip()
+
+    else:
+        log(f"Error: Unsupported provider '{provider}'.")
+        sys.exit(1)
+
+def commit_changes(message):
+    """
+    Commit changes to the repository with the provided message and push.
+    """
+    log(f"Committing changes with message: {message}")
+    run_command(f'git commit -m "{message}"', shell=True)
+    log("Pushing changes to remote repository...")
+    run_command("git push", shell=True)
+    log("Push completed.")
+
+def main():
+    """
+    Main function to handle the commit process.
+    """
+    log("Starting the commit process...")
+
+    if not is_git_repo():
+        log("Error: This directory is not a Git repository.")
+        sys.exit(1)
+
+    stage_changes()
+
+    context = get_git_changes()
+    if not context.strip():
+        log("Error: No changes to commit.")
+        sys.exit(1)
+
+    provider = sys.argv[1] if len(sys.argv) > 1 else "ollama"
+
+    if provider == "ollama":
+        message = ask_ollama(context)
+    else:
+        message = ask_third_party(context, provider)
+
+    commit_changes(message)
+
+    log("Commit process completed successfully.")
+
+if __name__ == "__main__":
+    main()
