@@ -3,11 +3,12 @@
 import os
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 
 #==================================================
 
-PROMPT = "Write a short (two sentences max) commit message that encompasses the changes shown. Be as succinct, clear and brief as possible.
+PROMPT = "Write a short (two sentences max) commit message that encompasses the git diffs shown. Be as succinct, clear and brief as possible. **CRITICAL**: Respond only with the commit message, nothing else."
 
 #==================================================
 
@@ -16,6 +17,7 @@ def log(message):
     Print a log message with a timestamp.
     """
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}")
+
 
 def run_command(command, cwd=None, capture_output=False, shell=False):
     """
@@ -38,11 +40,13 @@ def run_command(command, cwd=None, capture_output=False, shell=False):
         log(f"Error: Command failed: {command}\n{e}")
         sys.exit(1)
 
+
 def is_git_repo():
     """
     Check if the current directory is a Git repository.
     """
     return os.path.isdir(".git")
+
 
 def stage_changes():
     """
@@ -51,6 +55,7 @@ def stage_changes():
     log("Staging all changes...")
     run_command("git add .", shell=True)
 
+
 def get_git_changes():
     """
     Retrieve changes since the last commit.
@@ -58,30 +63,29 @@ def get_git_changes():
     log("Retrieving git changes...")
     return run_command("git diff --cached", capture_output=True, shell=True)
 
+
 def get_commit_summary():
     log("Retrieving commit summary...")
-    changes = run_command("git status", shell=True)
-    
-    # For simplicity, let's assume we're only interested in the number of files changed and lines added/removed
+    # Enable capture_output so we get the actual output
+    changes = run_command("git status", shell=True, capture_output=True)
+
+    # Now 'changes' is a string containing the output of `git status`
     num_files_changed = len(changes.splitlines())
     num_lines_added = 0
     num_lines_removed = 0
-    
+
     log(f"Found {num_files_changed} file(s) changed")
-    
-    # For simplicity, let's assume we're only interested in the number of files changed and lines added/removed
+
     for line in changes.splitlines():
         if "inserted" in line:
             num_lines_added += 1
         elif "deleted" in line:
             num_lines_removed += 1
-    
-    # Create a brief summary string based on the extracted information
+
     summary = f"{num_files_changed} file(s) changed, {num_lines_added + num_lines_removed} lines {'added' if num_lines_added > num_lines_removed else 'removed'}"
-    
     return summary
 
-# Replace `context` with the output of `get_commit_summary`
+
 def ask_ollama(context):
     """
     Use Ollama to generate a commit message based on the context.
@@ -129,6 +133,29 @@ def ask_third_party(context, provider):
         log(f"Error: Unsupported provider '{provider}'.")
         sys.exit(1)
 
+
+def edit_message_in_editor(initial_message):
+    
+    # Determine the editor; default to 'vi' if not set
+    editor = os.environ.get('EDITOR', 'vi')
+
+    # Create a temporary file to hold the initial message
+    with tempfile.NamedTemporaryFile(suffix=".tmp", delete=False) as tf:
+        tf_name = tf.name
+        tf.write(initial_message.encode('utf-8'))
+
+    # Open the editor on the temporary file
+    subprocess.call([editor, tf_name])
+
+    # Read the edited message back in
+    with open(tf_name, 'r', encoding='utf-8') as f:
+        edited_message = f.read()
+
+    # Clean up the temporary file
+    os.unlink(tf_name)
+    return edited_message.strip()
+
+
 def commit_changes(message):
     """
     Commit changes to the repository with the provided message and push.
@@ -138,6 +165,7 @@ def commit_changes(message):
     log("Pushing changes to remote repository...")
     run_command("git push origin main", shell=True)
     log("Push completed.")
+
 
 def main():
     """
@@ -151,7 +179,7 @@ def main():
 
     stage_changes()
     
-    summary = get_commit_summary()
+    summary = get_git_changes()
 
     provider = sys.argv[1] if len(sys.argv) > 1 else "ollama"
 
@@ -160,7 +188,22 @@ def main():
     else:
         message = ask_third_party(summary, provider)
 
-    commit_changes(message)
+    # Present the generated message to the user
+    print("\nGenerated commit message:\n")
+    print(message)
+    choice = input("\nDo you want to [E]dit, [A]ccept, or [C]ancel? ").strip().lower()
+
+    if choice.startswith('e'):
+        edited_message = edit_message_in_editor(message)
+        if not edited_message:
+            log("No commit message provided after editing. Aborting.")
+            sys.exit(1)
+        commit_changes(edited_message)
+    elif choice.startswith('a'):
+        commit_changes(message)
+    else:
+        log("Commit canceled by user.")
+        sys.exit(0)
 
     log("Commit process completed successfully.")
 
