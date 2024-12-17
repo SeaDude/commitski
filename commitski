@@ -5,6 +5,12 @@ import subprocess
 import sys
 from datetime import datetime
 
+#==================================================
+
+PROMPT = "Write a short (two sentences max) commit message that encompasses the changes shown. Be as succinct, clear and brief as possible.
+
+#==================================================
+
 def log(message):
     """
     Print a log message with a timestamp.
@@ -52,19 +58,43 @@ def get_git_changes():
     log("Retrieving git changes...")
     return run_command("git diff --cached", capture_output=True, shell=True)
 
+def get_commit_summary():
+    log("Retrieving commit summary...")
+    changes = run_command("git status", shell=True)
+    
+    # For simplicity, let's assume we're only interested in the number of files changed and lines added/removed
+    num_files_changed = len(changes.splitlines())
+    num_lines_added = 0
+    num_lines_removed = 0
+    
+    log(f"Found {num_files_changed} file(s) changed")
+    
+    # For simplicity, let's assume we're only interested in the number of files changed and lines added/removed
+    for line in changes.splitlines():
+        if "inserted" in line:
+            num_lines_added += 1
+        elif "deleted" in line:
+            num_lines_removed += 1
+    
+    # Create a brief summary string based on the extracted information
+    summary = f"{num_files_changed} file(s) changed, {num_lines_added + num_lines_removed} lines {'added' if num_lines_added > num_lines_removed else 'removed'}"
+    
+    return summary
+
+# Replace `context` with the output of `get_commit_summary`
 def ask_ollama(context):
     """
     Use Ollama to generate a commit message based on the context.
     """
     log("Preparing prompt for Ollama...")
-    prompt = f"Closely analyze the following git changes. Write a detailed commit message that encompasses the changes. Be as succinct as possible.\n\n{context}"
-    escaped_prompt = f'"""{" ".join(prompt.splitlines())}"""'
-
+    prompt = f"{PROMPT}\n\n{context}"
+    
     log("Sending request to Ollama LLM...")
-    command = ["ollama", "run", "llama3.2-vision:latest", escaped_prompt]
-    response = run_command(command, capture_output=True)
+    command = ["ollama", "run", "llama3.2-vision:latest"]
+    response = run_command(command + [prompt], capture_output=True)
     log("Received response from Ollama.")
     return response
+
 
 def ask_third_party(context, provider):
     """
@@ -76,8 +106,8 @@ def ask_third_party(context, provider):
         openai.api_key = os.getenv("OPENAI_API_KEY")
         log("Sending request to OpenAI...")
         response = openai.Completion.create(
-            model="text-davinci-003",
-            prompt=f"Closely analyze the following git changes. Write a detailed commit message that encompasses the changes. Be as succinct as possible.\n\n{context}",
+            model="gpt-4o",
+            prompt = f"{PROMPT}\n\n{context}",
             max_tokens=100,
         )
         log("Received response from OpenAI.")
@@ -88,8 +118,8 @@ def ask_third_party(context, provider):
         client = anthropic.Client(api_key=os.getenv("ANTHROPIC_API_KEY"))
         log("Sending request to Anthropic...")
         response = client.completions.create(
-            model="claude-2",
-            prompt=f"Closely analyze the following git changes. Write a detailed commit message that encompasses the changes. Be as succinct as possible.\n\n{context}",
+            model="claude-3",
+            prompt = f"{PROMPT}\n\n{context}",
             max_tokens_to_sample=100,
         )
         log("Received response from Anthropic.")
@@ -106,7 +136,7 @@ def commit_changes(message):
     log(f"Committing changes with message: {message}")
     run_command(f'git commit -m "{message}"', shell=True)
     log("Pushing changes to remote repository...")
-    run_command("git push", shell=True)
+    run_command("git push origin main", shell=True)
     log("Push completed.")
 
 def main():
@@ -120,18 +150,15 @@ def main():
         sys.exit(1)
 
     stage_changes()
-
-    context = get_git_changes()
-    if not context.strip():
-        log("Error: No changes to commit.")
-        sys.exit(1)
+    
+    summary = get_commit_summary()
 
     provider = sys.argv[1] if len(sys.argv) > 1 else "ollama"
 
     if provider == "ollama":
-        message = ask_ollama(context)
+        message = ask_ollama(summary)
     else:
-        message = ask_third_party(context, provider)
+        message = ask_third_party(summary, provider)
 
     commit_changes(message)
 
