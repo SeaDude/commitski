@@ -9,6 +9,9 @@ from datetime import datetime
 #==================================================
 
 PROMPT = "Write a short (two sentences max) commit message that encompasses the git diffs shown. Be as succinct, clear and brief as possible. **CRITICAL**: Respond only with the commit message, nothing else."
+OLLAMA_MODEL = "llama3.2-vision:latest"
+OPENAI_MODEL = 'gpt-4o'
+ANTHROPIC_MODEL = 'claude-3'
 
 #==================================================
 
@@ -94,7 +97,7 @@ def ask_ollama(context):
     prompt = f"{PROMPT}\n\n{context}"
     
     log("Sending request to Ollama LLM...")
-    command = ["ollama", "run", "llama3.2-vision:latest"]
+    command = ["ollama", "run", OLLAMA_MODEL]
     response = run_command(command + [prompt], capture_output=True)
     log("Received response from Ollama.")
     return response
@@ -110,7 +113,7 @@ def ask_third_party(context, provider):
         openai.api_key = os.getenv("OPENAI_API_KEY")
         log("Sending request to OpenAI...")
         response = openai.Completion.create(
-            model="gpt-4o",
+            model=OPENAI_MODEL,
             prompt = f"{PROMPT}\n\n{context}",
             max_tokens=100,
         )
@@ -122,7 +125,7 @@ def ask_third_party(context, provider):
         client = anthropic.Client(api_key=os.getenv("ANTHROPIC_API_KEY"))
         log("Sending request to Anthropic...")
         response = client.completions.create(
-            model="claude-3",
+            model=ANTHROPIC_MODEL,
             prompt = f"{PROMPT}\n\n{context}",
             max_tokens_to_sample=100,
         )
