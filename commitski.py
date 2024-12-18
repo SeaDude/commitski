@@ -139,8 +139,8 @@ def ask_third_party(context, provider):
 
 def edit_message_in_editor(initial_message):
     
-    # Determine the editor; default to 'vi' if not set
-    editor = os.environ.get('EDITOR', 'vi')
+    # Determine the editor; default to nano
+    editor = os.environ.get('EDITOR', 'nano')
 
     # Create a temporary file to hold the initial message
     with tempfile.NamedTemporaryFile(suffix=".tmp", delete=False) as tf:
