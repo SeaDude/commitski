@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/system9/projects/commitski/.venv/bin/python3
 
 import os
 import subprocess
@@ -9,8 +9,8 @@ from datetime import datetime
 #==================================================
 
 PROMPT = "Write a short (two sentences max) commit message that encompasses the git diffs shown. Be as succinct, clear and brief as possible. **CRITICAL**: Respond only with the commit message, nothing else."
-OLLAMA_MODEL = "llama3.2-vision:latest"
-OPENAI_MODEL = 'gpt-4o'
+OLLAMA_MODEL = "deepseek-r1:8b"
+OPENAI_MODEL = 'o3-mini'
 ANTHROPIC_MODEL = 'claude-3'
 
 #==================================================
@@ -19,7 +19,7 @@ def log(message):
     """
     Print a log message with a timestamp.
     """
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}")
+    print(f"### [{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}] {message}")
 
 
 def run_command(command, cwd=None, capture_output=False, shell=False):
